@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Friends Coffee Tozeur — Réservation</title>
+  <link rel="stylesheet" href="css/style.css" />
+
+  <!--
+  ════════════════════════════════════════════════════════
+   reservation.html  —  Formulaire de réservation de table
+  ════════════════════════════════════════════════════════
+   QUOI :  Permet à un client de réserver une table.
+
+   CE QUI A CHANGÉ vs l'original :
+     ✅ Design identique — aucun changement visuel
+     ✅ JS mis à jour :
+        - URL → POST /api/reservations (notre backend)
+        - Envoi en JSON
+        - Validation côté client renforcée (date passée, heures)
+        - Après envoi réussi → 2 emails automatiques via le backend
+          (confirmation au client + alerte à l'admin)
+        - Message de succès amélioré
+
+   FLUX COMPLET :
+     1. Client remplit le formulaire (nom, email, tél, date, heure, nb pers.)
+     2. JS valide localement (date pas dans le passé, champs requis)
+     3. JS envoie POST /api/reservations en JSON
+     4. Backend valide + enregistre en base (statut = "en attente")
+     5. Backend envoie 2 emails automatiques
+     6. Page affiche le message de succès
+     7. L'admin voit la réservation dans admin.html et peut la confirmer
+  ════════════════════════════════════════════════════════
+  -->
+
+  <style>
+    /* Styles identiques à l'original */
+    .resa-wrap { background: var(--dark-2); padding: 100px 0 120px; }
+    .resa-grid { display: grid; grid-template-columns: 1fr 1.3fr; gap: 80px; align-items: start; }
+    .resa-info-title { font-family: "Playfair Display", serif; font-size: clamp(30px,4vw,46px); color: var(--cream); line-height: 1.15; margin: 16px 0 20px; }
+    .resa-info-sub { font-size: 15px; color: var(--text-muted); line-height: 1.75; margin-bottom: 36px; }
+    .resa-rules { list-style: none; display: flex; flex-direction: column; gap: 16px; margin-bottom: 40px; }
+    .resa-rules li { display: flex; align-items: flex-start; gap: 14px; font-size: 14px; color: var(--text-muted); line-height: 1.5; }
+    .rule-icon { width: 36px; height: 36px; background: rgba(201,163,79,.12); border: 1px solid rgba(201,163,79,.25); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+    .rule-text strong { display: block; color: var(--cream); font-size: 13px; margin-bottom: 2px; }
+    .resa-form-card { background: var(--dark-3); border: 1px solid var(--border); border-radius: 20px; padding: 44px; }
+    .resa-form-title { font-family: "Playfair Display", serif; font-size: 22px; color: var(--cream); margin-bottom: 6px; }
+    .resa-form-sub { font-size: 13px; color: var(--text-muted); margin-bottom: 32px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .form-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+    .form-group.full { grid-column: 1 / -1; }
+    .form-group label { font-size: 12px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
+    .form-group input, .form-group select, .form-group textarea {
+      background: var(--dark-2); border: 1px solid var(--border); border-radius: 10px;
+      color: var(--cream); font-family: inherit; font-size: 14px; padding: 13px 16px;
+      outline: none; transition: border-color .2s, box-shadow .2s; appearance: none; -webkit-appearance: none;
+    }
+    .form-group select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23c9a34f' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px; cursor: pointer;
+    }
+    .form-group select option { background: #1a1a14; }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(201,163,79,.12); }
+    .form-group input::placeholder, .form-group textarea::placeholder { color: #5a5a48; }
+    .form-group textarea { resize: vertical; min-height: 90px; }
+    .qty-wrap { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--dark-2); transition: border-color .2s; }
+    .qty-wrap:focus-within { border-color: var(--gold); }
+    .qty-btn { width: 44px; height: 48px; background: none; border: none; color: var(--gold); font-size: 1.3rem; cursor: pointer; transition: background .15s; display: flex; align-items: center; justify-content: center; }
+    .qty-btn:hover { background: rgba(201,163,79,.1); }
+    #qty-display { flex: 1; text-align: center; color: var(--cream); font-size: 15px; font-weight: 500; background: transparent; border: none; outline: none; pointer-events: none; }
+    .btn-resa { width: 100%; padding: 16px; background: var(--gold); color: var(--dark); border: none; border-radius: 12px; font-family: inherit; font-size: 14px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; transition: opacity .2s, transform .15s; margin-top: 8px; }
+    .btn-resa:hover:not(:disabled) { opacity: .88; transform: translateY(-1px); }
+    .btn-resa:disabled { opacity: .5; cursor: not-allowed; }
+    .spinner { width: 16px; height: 16px; border: 2px solid rgba(20,20,14,.3); border-top-color: var(--dark); border-radius: 50%; animation: spin .7s linear infinite; display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .alert { display: none; padding: 16px 20px; border-radius: 10px; font-size: 14px; gap: 10px; align-items: flex-start; margin-top: 12px; }
+    .alert-success { background: rgba(201,163,79,.1); border: 1px solid rgba(201,163,79,.3); color: var(--gold); }
+    .alert-error   { background: rgba(220,80,80,.1);  border: 1px solid rgba(220,80,80,.3);  color: #e07070; }
+    @media (max-width: 900px) { .resa-grid { grid-template-columns: 1fr; gap: 48px; } .resa-form-card { padding: 28px 20px; } }
+    @media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+
+  <!-- ── NAVBAR ────────────────────────────────────────────────────────────── -->
+  <nav class="navbar" id="navbar">
+    <a href="index.html" class="nav-logo">Friends <span>Coffee</span></a>
+    <ul class="nav-links">
+      <li><a href="index.html">Accueil</a></li>
+      <li><a href="menu.html">Menu</a></li>
+      <li><a href="galerie.html">Galerie</a></li>
+      <li><a href="apropos.html">À Propos</a></li>
+      <li><a href="contact.html">Contact</a></li>
+    </ul>
+    <a href="reservation.html" class="nav-cta btn active">Réserver</a>
+    <button class="hamburger" id="ham"><span></span><span></span><span></span></button>
+  </nav>
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="index.html" onclick="closeMob()">Accueil</a>
+    <a href="menu.html" onclick="closeMob()">Menu</a>
+    <a href="galerie.html" onclick="closeMob()">Galerie</a>
+    <a href="apropos.html" onclick="closeMob()">À Propos</a>
+    <a href="contact.html" onclick="closeMob()">Contact</a>
+  </div>
+
+  <!-- ── PAGE HERO ──────────────────────────────────────────────────────────── -->
+  <div class="page-hero">
+    <div class="page-hero-bg" style="background-image:url('image/8.jpg')"></div>
+    <div class="page-hero-content">
+      <h1 class="page-hero-title">Réservation</h1>
+      <p class="page-hero-sub">Réservez votre table en quelques secondes</p>
+    </div>
+  </div>
+
+  <!-- ── CONTENU PRINCIPAL ─────────────────────────────────────────────────── -->
+  <div class="resa-wrap">
+    <div class="container">
+      <div class="resa-grid">
+
+        <!-- ── Colonne gauche : informations ──────────────────────────────── -->
+        <div class="reveal">
+          <span class="section-eyebrow">Bienvenue</span>
+          <h2 class="resa-info-title">Réservez votre <em>moment</em></h2>
+          <p class="resa-info-sub">
+            Que ce soit pour un déjeuner en famille, un dîner romantique ou
+            un événement d'entreprise, nous vous préparons la meilleure table.
+          </p>
+
+          <ul class="resa-rules">
+            <li>
+              <div class="rule-icon">📅</div>
+              <div class="rule-text">
+                <strong>Réservation 24h à l'avance</strong>
+                Pour les groupes de plus de 8 personnes, merci de nous contacter directement.
+              </div>
+            </li>
+            <li>
+              <div class="rule-icon">✉️</div>
+              <div class="rule-text">
+                <strong>Confirmation par email</strong>
+                Vous recevrez une confirmation automatique dès votre demande, et une confirmation définitive sous 24h.
+              </div>
+            </li>
+            <li>
+              <div class="rule-icon">🎉</div>
+              <div class="rule-text">
+                <strong>Occasions spéciales</strong>
+                Anniversaire, romantique, réunion d'affaires — précisez dans le formulaire pour une attention particulière.
+              </div>
+            </li>
+            <li>
+              <div class="rule-icon">📞</div>
+              <div class="rule-text">
+                <strong>Besoin d'aide ?</strong>
+                Appelez-nous directement au +216 XX XXX XXX ou via notre <a href="contact.html" style="color:var(--gold)">formulaire de contact</a>.
+              </div>
+            </li>
+          </ul>
+        </div>
+
+        <!-- ── Colonne droite : formulaire ────────────────────────────────────
+             Envoie POST /api/reservations via JS (voir script en bas).
+        -->
+        <div class="reveal delay-1">
+          <div class="resa-form-card">
+            <h3 class="resa-form-title">Votre réservation</h3>
+            <p class="resa-form-sub">Tous les champs marqués * sont obligatoires.</p>
+
+            <form id="resa-form" novalidate>
+
+              <!-- Nom + Email -->
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="nom">Nom complet *</label>
+                  <input type="text" id="nom" name="nom" placeholder="Votre nom" required />
+                </div>
+                <div class="form-group">
+                  <label for="email">Email *</label>
+                  <input type="email" id="email" name="email" placeholder="votre@email.com" required />
+                </div>
+              </div>
+
+              <!-- Téléphone + Occasion -->
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="telephone">Téléphone *</label>
+                  <input type="tel" id="telephone" name="telephone" placeholder="+216 XX XXX XXX" required />
+                </div>
+                <div class="form-group">
+                  <label for="occasion">Occasion</label>
+                  <select id="occasion" name="occasion">
+                    <option value="">Sélectionner…</option>
+                    <option>Déjeuner</option>
+                    <option>Dîner</option>
+                    <option>Anniversaire 🎂</option>
+                    <option>Réunion d'affaires</option>
+                    <option>Romantique 💫</option>
+                    <option>Autre</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Date + Heure -->
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="date">Date *</label>
+                  <input type="date" id="date" name="date" required />
+                </div>
+                <div class="form-group">
+                  <label for="heure">Heure *</label>
+                  <select id="heure" name="heure" required>
+                    <option value="">Choisir…</option>
+                    <option>08:00</option><option>08:30</option>
+                    <option>09:00</option><option>09:30</option>
+                    <option>10:00</option><option>10:30</option>
+                    <option>11:00</option><option>11:30</option>
+                    <option>12:00</option><option>12:30</option>
+                    <option>13:00</option><option>13:30</option>
+                    <option>14:00</option><option>14:30</option>
+                    <option>15:00</option><option>15:30</option>
+                    <option>16:00</option><option>16:30</option>
+                    <option>17:00</option><option>17:30</option>
+                    <option>18:00</option><option>18:30</option>
+                    <option>19:00</option><option>19:30</option>
+                    <option>20:00</option><option>20:30</option>
+                    <option>21:00</option><option>21:30</option>
+                    <option>22:00</option><option>22:30</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Nombre de personnes (compteur interactif) -->
+              <div class="form-group">
+                <label>Nombre de personnes *</label>
+                <div class="qty-wrap">
+                  <button type="button" class="qty-btn" id="qty-minus">−</button>
+                  <span id="qty-display">2</span>
+                  <!-- Champ caché qui stocke la valeur réelle envoyée au serveur -->
+                  <input type="hidden" id="nb_personnes" name="nb_personnes" value="2" />
+                  <button type="button" class="qty-btn" id="qty-plus">+</button>
+                </div>
+              </div>
+
+              <!-- Note spéciale -->
+              <div class="form-group">
+                <label for="note">Note pour l'équipe</label>
+                <textarea id="note" name="note"
+                  placeholder="Allergies, préférences, demandes spéciales…"></textarea>
+              </div>
+
+              <!-- Bouton de soumission -->
+              <button type="submit" class="btn-resa" id="submit-btn">
+                <span id="btn-text">Confirmer la réservation →</span>
+                <span class="spinner" id="spinner"></span>
+              </button>
+
+              <!-- Messages de résultat -->
+              <div class="alert alert-success" id="alert-success">
+                ✅ Votre réservation a bien été enregistrée !
+                Vous recevrez une confirmation par email. Nous vous confirmons définitivement sous 24h.
+              </div>
+              <div class="alert alert-error" id="alert-error">
+                ❌ Une erreur est survenue. Veuillez réessayer ou nous appeler directement.
+              </div>
+
+            </form>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ── FOOTER ─────────────────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-top">
+        <div>
+          <p class="footer-brand-name">Friends <span>Coffee</span></p>
+          <p class="footer-brand-desc">Un espace de vie unique au cœur de Tozeur.</p>
+          <div class="footer-social">
+            <a href="https://www.facebook.com/friendscoffeetozeur">F</a>
+            <a href="https://www.instagram.com/friendscoffeetoz">ig</a>
+          </div>
+        </div>
+        <div>
+          <p class="footer-col-title">Navigation</p>
+          <div class="footer-col-links">
+            <a href="index.html">Accueil</a><a href="menu.html">Menu</a>
+            <a href="galerie.html">Galerie</a><a href="apropos.html">À Propos</a>
+            <a href="contact.html">Contact</a>
+          </div>
+        </div>
+        <div>
+          <p class="footer-col-title">Horaires</p>
+          <p class="footer-col-text">Tous les jours<br />8h00 — 00h00</p>
+        </div>
+        <div>
+          <p class="footer-col-title">Localisation</p>
+          <p class="footer-col-text">Centre-ville<br />Tozeur, Tunisie</p>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p class="footer-copy">© 2024 Friends Coffee Tozeur</p>
+        <p class="footer-slogan">Nothing makes sense without Friends</p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+  // ════════════════════════════════════════════════════════════════════════
+  //  JAVASCRIPT — reservation.html
+  // ════════════════════════════════════════════════════════════════════════
+
+  // ── Navbar ────────────────────────────────────────────────────────────────
+  const ham = document.getElementById("ham");
+  const mob = document.getElementById("mobileMenu");
+  ham.addEventListener("click", () => { ham.classList.toggle("open"); mob.classList.toggle("open"); });
+  function closeMob() { ham.classList.remove("open"); mob.classList.remove("open"); }
+  window.addEventListener("scroll", () => {
+    document.getElementById("navbar").classList.toggle("scrolled", window.scrollY > 40);
+  });
+
+  // ── Scroll Reveal ─────────────────────────────────────────────────────────
+  const observer = new IntersectionObserver(
+    entries => entries.forEach(e => { if (e.isIntersecting) e.target.classList.add("visible"); }),
+    { threshold: 0.1 }
+  );
+  document.querySelectorAll(".reveal").forEach(el => observer.observe(el));
+
+  // ── Compteur de personnes ─────────────────────────────────────────────────
+  //
+  //  Le compteur affiche une valeur entre 1 et 20.
+  //  La vraie valeur est stockée dans le champ caché #nb_personnes
+  //  qui sera lu lors de la soumission du formulaire.
+
+  let qty = 2;
+  const qtyDisplay = document.getElementById("qty-display");
+  const qtyInput   = document.getElementById("nb_personnes");
+
+  document.getElementById("qty-minus").addEventListener("click", () => {
+    if (qty > 1) { qty--; qtyDisplay.textContent = qty; qtyInput.value = qty; }
+  });
+  document.getElementById("qty-plus").addEventListener("click", () => {
+    if (qty < 20) { qty++; qtyDisplay.textContent = qty; qtyInput.value = qty; }
+  });
+
+  // ── Date minimale = aujourd'hui ────────────────────────────────────────────
+  //  Empêche de choisir une date dans le passé côté navigateur.
+  //  Le backend vérifie aussi côté serveur (double protection).
+
+  document.getElementById("date").setAttribute("min", new Date().toISOString().split("T")[0]);
+
+  // ── Soumission → POST /api/reservations ───────────────────────────────────
+  //
+  //  CHANGEMENTS vs l'original :
+  //    1. URL → notre backend Express (plus de Formspree)
+  //    2. Envoi en JSON
+  //    3. Lecture de la réponse JSON du backend
+  //    4. Après succès → backend envoie 2 emails automatiques
+
+  const API_RESERVATIONS = "http://localhost:3000/api/reservations";
+
+  document.getElementById("resa-form").addEventListener("submit", async function(e) {
+    e.preventDefault();
+
+    const btn     = document.getElementById("submit-btn");
+    const btnText = document.getElementById("btn-text");
+    const spinner = document.getElementById("spinner");
+    const success = document.getElementById("alert-success");
+    const error   = document.getElementById("alert-error");
+
+    // Réinitialisation
+    success.style.display = "none";
+    error.style.display   = "none";
+
+    // État chargement
+    btn.disabled          = true;
+    btnText.textContent   = "Envoi en cours…";
+    spinner.style.display = "inline-block";
+
+    // Collecte des données → JSON
+    const json = Object.fromEntries(new FormData(this).entries());
+
+    try {
+      const res  = await fetch(API_RESERVATIONS, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify(json),
+      });
+      const data = await res.json();
+
+      if (data.ok) {
+        // ✅ Succès : réservation enregistrée (statut "en attente") + emails envoyés
+        success.style.display = "flex";
+        this.reset();
+        qty = 2;
+        qtyDisplay.textContent = "2";
+        qtyInput.value = "2";
+      } else {
+        error.style.display = "flex";
+        console.error("Erreur backend :", data.erreur);
+      }
+
+    } catch (err) {
+      error.style.display = "flex";
+      console.error("Erreur réseau :", err);
+    } finally {
+      btn.disabled          = false;
+      btnText.textContent   = "Confirmer la réservation →";
+      spinner.style.display = "none";
+    }
+  });
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Friends Coffee Tozeur — Menu</title>
+  <link rel="stylesheet" href="css/style.css" />
+
+  <!--
+  ════════════════════════════════════════════════════════
+   menu.html  —  Carte du café
+  ════════════════════════════════════════════════════════
+   QUOI :  Affiche le menu complet avec filtres par catégorie.
+
+   CE QUI A CHANGÉ vs l'original :
+     ✅ Le menu est maintenant DYNAMIQUE :
+        - Au chargement → GET /api/menu
+        - Le backend retourne les items gérés depuis admin.html
+        - Les onglets de catégorie sont générés automatiquement
+        - Les prix sont au format TND (3 décimales)
+     ✅ Fallback statique : si le serveur est éteint,
+        une version fixe s'affiche (pour les démos sans backend)
+     ✅ Spinner de chargement pendant la requête API
+
+   FLUX COMPLET :
+     1. Page se charge → JS appelle GET /api/menu
+     2. Réponse → { categories: [...], menu: { Cafés: [...], ... } }
+     3. JS génère les onglets + les cartes de chaque item
+     4. Clic sur un onglet → affiche/cache les items de cette catégorie
+     5. L'admin peut modifier le menu en temps réel via admin.html
+  ════════════════════════════════════════════════════════
+  -->
+
+  <style>
+    /* ── Onglets de catégorie ─────────────────────────────────────────────── */
+    .menu-tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 0; margin-bottom: 56px; border: 1px solid rgba(201,168,76,.2); width: fit-content; margin-left: auto; margin-right: auto; }
+    .menu-tab { padding: 12px 28px; background: none; border: none; cursor: pointer; font-family: "DM Sans", sans-serif; font-size: 12px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); border-right: 1px solid rgba(201,168,76,.2); transition: all var(--transition); white-space: nowrap; }
+    .menu-tab:last-child { border-right: none; }
+    .menu-tab:hover { color: var(--cream); background: rgba(201,168,76,.06); }
+    .menu-tab.active { background: var(--gold); color: var(--dark); }
+
+    /* ── Grille des items du menu ─────────────────────────────────────────── */
+    .menu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px,1fr)); gap: 24px; }
+
+    /* ── Carte d'un item ──────────────────────────────────────────────────── */
+    .menu-card {
+      background: var(--dark-3); border: 1px solid var(--border);
+      border-radius: 16px; overflow: hidden;
+      transition: transform .3s, border-color .3s;
+      display: none; /* caché par défaut, JS affiche la catégorie active */
+    }
+    .menu-card.show { display: flex; flex-direction: column; }
+    .menu-card:hover { transform: translateY(-4px); border-color: rgba(201,168,76,.35); }
+    .menu-card-img { width: 100%; height: 180px; object-fit: cover; background: var(--dark-2); display: flex; align-items: center; justify-content: center; font-size: 3rem; color: var(--muted); }
+    .menu-card-img img { width: 100%; height: 100%; object-fit: cover; }
+    .menu-card-body { padding: 20px; flex: 1; display: flex; flex-direction: column; gap: 8px; }
+    .menu-card-name { font-family: "Playfair Display", serif; font-size: 18px; color: var(--cream); }
+    .menu-card-desc { font-size: 13px; color: var(--muted); line-height: 1.6; flex: 1; }
+    .menu-card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }
+    .menu-card-price { font-size: 18px; font-weight: 600; color: var(--gold); }
+    .menu-card-badge { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); background: rgba(201,168,76,.08); padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(201,168,76,.15); }
+
+    /* ── État de chargement ───────────────────────────────────────────────── */
+    .menu-loading { text-align: center; padding: 80px 0; color: var(--muted); }
+    .menu-loading .ico { font-size: 2.5rem; margin-bottom: 12px; }
+    .spinner-ring { display: inline-block; width: 32px; height: 32px; border: 3px solid rgba(201,168,76,.2); border-top-color: var(--gold); border-radius: 50%; animation: spin .8s linear infinite; margin-bottom: 16px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Section spéciale (petit-déj, occasions) ─────────────────────────── */
+    .menu-special { background: var(--dark-3); padding: 80px 0; }
+    .special-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(260px,1fr)); gap: 20px; margin-top: 48px; }
+    .special-card { padding: 32px; border: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px; transition: border-color .3s; }
+    .special-card:hover { border-color: rgba(201,168,76,.4); }
+    .special-icon { font-size: 2rem; }
+    .special-name { font-family: "Playfair Display", serif; font-size: 20px; color: var(--cream); }
+    .special-desc { font-size: 14px; color: var(--muted); line-height: 1.7; }
+    .special-price { color: var(--gold); font-weight: 600; font-size: 16px; }
+
+    @media (max-width: 600px) { .menu-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+
+  <!-- ── NAVBAR ─────────────────────────────────────────────────────────────── -->
+  <nav class="navbar" id="navbar">
+    <a href="index.html" class="nav-logo">Friends <span>Coffee</span></a>
+    <ul class="nav-links">
+      <li><a href="index.html">Accueil</a></li>
+      <li><a href="menu.html" class="active">Menu</a></li>
+      <li><a href="galerie.html">Galerie</a></li>
+      <li><a href="apropos.html">À Propos</a></li>
+      <li><a href="contact.html">Contact</a></li>
+    </ul>
+    <a href="reservation.html" class="nav-cta btn">Réserver</a>
+    <button class="hamburger" id="ham"><span></span><span></span><span></span></button>
+  </nav>
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="index.html" onclick="closeMob()">Accueil</a>
+    <a href="menu.html" onclick="closeMob()">Menu</a>
+    <a href="galerie.html" onclick="closeMob()">Galerie</a>
+    <a href="apropos.html" onclick="closeMob()">À Propos</a>
+    <a href="contact.html" onclick="closeMob()">Contact</a>
+  </div>
+
+  <!-- ── PAGE HERO ──────────────────────────────────────────────────────────── -->
+  <div class="page-hero">
+    <div class="page-hero-bg" style="background-image:url('image/8.jpg')"></div>
+    <div class="page-hero-content">
+      <h1 class="page-hero-title">Notre Menu</h1>
+      <p class="page-hero-sub">Des saveurs authentiques à chaque tasse</p>
+    </div>
+  </div>
+
+  <!-- ── SECTION MENU PRINCIPAL ────────────────────────────────────────────── -->
+  <section class="section" style="background:var(--dark)">
+    <div class="container">
+
+      <!-- En-tête -->
+      <div style="text-align:center;margin-bottom:56px" class="reveal">
+        <span class="section-eyebrow">Notre carte</span>
+        <h2 class="section-title">Boissons & <em>Saveurs</em></h2>
+        <div class="divider center"></div>
+        <p class="section-sub" style="margin:0 auto;text-align:center">
+          Cafés d'exception, jus frais, crêpes maison et plats généreux —
+          pour chaque moment de la journée.
+        </p>
+      </div>
+
+      <!-- ── Onglets de catégorie ─────────────────────────────────────────────
+           Générés dynamiquement par JS selon les catégories retournées par l'API.
+           Fallback : onglets statiques si le serveur est éteint.
+      -->
+      <div class="menu-tabs reveal" id="menu-tabs">
+        <!-- Injecté par JS -->
+      </div>
+
+      <!-- ── Grille des items ────────────────────────────────────────────────
+           Les cartes sont générées par JS et injectées ici.
+           Pendant le chargement → spinner visible.
+      -->
+      <div id="menu-loading" class="menu-loading">
+        <div class="spinner-ring"></div>
+        <p>Chargement du menu…</p>
+      </div>
+      <div class="menu-grid reveal" id="menu-grid"></div>
+
+    </div>
+  </section>
+
+  <!-- ── SECTION PETITS-DÉJEUNERS ──────────────────────────────────────────── -->
+  <div class="menu-special">
+    <div class="container">
+      <div style="text-align:center" class="reveal">
+        <span class="section-eyebrow">Le matin</span>
+        <h2 class="section-title">Formules <em>Petit-Déjeuner</em></h2>
+        <div class="divider center"></div>
+      </div>
+      <div class="special-grid">
+        <div class="special-card reveal">
+          <div class="special-icon">☀️</div>
+          <h3 class="special-name">Formule Everyday</h3>
+          <p class="special-desc">Café au choix, jus d'orange frais, viennoiserie et confiture maison.</p>
+          <span class="special-price">À partir de 8.500 TND</span>
+        </div>
+        <div class="special-card reveal delay-1">
+          <div class="special-icon">🥗</div>
+          <h3 class="special-name">Formule Healthy</h3>
+          <p class="special-desc">Smoothie bowl, granola, fruits frais de saison et thé vert bio.</p>
+          <span class="special-price">À partir de 12.000 TND</span>
+        </div>
+        <div class="special-card reveal delay-2">
+          <div class="special-icon">🍳</div>
+          <h3 class="special-name">Formule Brunch</h3>
+          <p class="special-desc">Œufs au choix, toast pain de campagne, fromage, charcuterie et boisson chaude.</p>
+          <span class="special-price">À partir de 16.000 TND</span>
+        </div>
+        <div class="special-card reveal delay-3">
+          <div class="special-icon">⚡</div>
+          <h3 class="special-name">Formule Rapido</h3>
+          <p class="special-desc">Café express, croissant beurre et jus d'orange. Idéal pour les matins pressés.</p>
+          <span class="special-price">À partir de 5.500 TND</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CTA RÉSERVATION ───────────────────────────────────────────────────── -->
+  <section class="section" style="background:var(--dark-2);text-align:center">
+    <div class="container">
+      <div class="reveal">
+        <span class="section-eyebrow">Prêt à vivre l'expérience ?</span>
+        <h2 class="section-title">Réservez <em>votre table</em></h2>
+        <div class="divider center"></div>
+        <p class="section-sub" style="margin:0 auto 36px;text-align:center">
+          Profitez d'une table en terrasse avec vue panoramique sur les minarets de Tozeur.
+        </p>
+        <a href="reservation.html" class="btn">Réserver maintenant →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FOOTER ─────────────────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-top">
+        <div>
+          <p class="footer-brand-name">Friends <span>Coffee</span></p>
+          <p class="footer-brand-desc">Un espace de vie unique au cœur de Tozeur.</p>
+          <div class="footer-social">
+            <a href="https://www.facebook.com/friendscoffeetozeur">F</a>
+            <a href="https://www.instagram.com/friendscoffeetoz">ig</a>
+          </div>
+        </div>
+        <div>
+          <p class="footer-col-title">Navigation</p>
+          <div class="footer-col-links">
+            <a href="index.html">Accueil</a><a href="menu.html">Menu</a>
+            <a href="galerie.html">Galerie</a><a href="apropos.html">À Propos</a>
+            <a href="contact.html">Contact</a>
+          </div>
+        </div>
+        <div><p class="footer-col-title">Horaires</p><p class="footer-col-text">Tous les jours<br />8h00 — 00h00</p></div>
+        <div><p class="footer-col-title">Localisation</p><p class="footer-col-text">Centre-ville<br />Tozeur, Tunisie</p></div>
+      </div>
+      <div class="footer-bottom">
+        <p class="footer-copy">© 2024 Friends Coffee Tozeur</p>
+        <p class="footer-slogan">Nothing makes sense without Friends</p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+  // ════════════════════════════════════════════════════════════════════════
+  //  JAVASCRIPT — menu.html
+  // ════════════════════════════════════════════════════════════════════════
+
+  // ── Navbar ────────────────────────────────────────────────────────────────
+  const ham = document.getElementById("ham");
+  const mob = document.getElementById("mobileMenu");
+  ham.addEventListener("click", () => { ham.classList.toggle("open"); mob.classList.toggle("open"); });
+  function closeMob() { ham.classList.remove("open"); mob.classList.remove("open"); }
+  window.addEventListener("scroll", () => {
+    document.getElementById("navbar").classList.toggle("scrolled", scrollY > 50);
+  });
+
+  // ── Scroll Reveal ─────────────────────────────────────────────────────────
+  const obs = new IntersectionObserver(
+    e => e.forEach(el => { if (el.isIntersecting) el.target.classList.add("visible"); }),
+    { threshold: 0.08 }
+  );
+  document.querySelectorAll(".reveal").forEach(el => obs.observe(el));
+
+  // ── Chargement dynamique du menu depuis l'API ──────────────────────────────
+  //
+  //  NOUVEAU vs l'original :
+  //    1. On appelle GET /api/menu
+  //    2. Le backend retourne les items groupés par catégorie
+  //    3. On génère les onglets + les cartes dynamiquement
+  //    4. Si le serveur est éteint → fallback avec des items statiques
+
+  const API_MENU = "http://localhost:3000/api/menu";
+
+  // Données de fallback si le serveur est éteint (démo sans backend)
+  const MENU_FALLBACK = {
+    categories: ["Cafés","Thés","Jus","Crêpes","Desserts"],
+    menu: {
+      "Cafés":    [{ id:1, nom:"Expresso",     prix:2.5,  description:"Café serré traditionnel" },
+                   { id:2, nom:"Café au lait",  prix:3.0,  description:"Doux et crémeux" },
+                   { id:3, nom:"Café Turc",     prix:2.5,  description:"Préparé à l'ancienne" },
+                   { id:4, nom:"Iced Coffee",   prix:5.0,  description:"Café glacé maison" }],
+      "Thés":     [{ id:5, nom:"Thé Menthe",   prix:2.5,  description:"Menthe fraîche de Tozeur" },
+                   { id:6, nom:"Thé Vert",      prix:2.5,  description:"Thé vert premium" }],
+      "Jus":      [{ id:7, nom:"Jus d'orange", prix:5.0,  description:"Oranges pressées du moment" },
+                   { id:8, nom:"Smoothie",      prix:7.0,  description:"Fruits frais mixés" }],
+      "Crêpes":   [{ id:9, nom:"Crêpe Nutella",prix:6.0,  description:"Crêpe fine et dorée" },
+                   { id:10,nom:"Crêpe banane",  prix:6.0,  description:"Banane caramélisée" }],
+      "Desserts": [{ id:11,nom:"Tiramisu",      prix:8.0,  description:"Recette maison" },
+                   { id:12,nom:"Cheesecake",    prix:8.0,  description:"New-yorkais, coulis fruits rouges" }],
+    }
+  };
+
+  async function chargerMenu() {
+    const tabsEl   = document.getElementById("menu-tabs");
+    const gridEl   = document.getElementById("menu-grid");
+    const loadEl   = document.getElementById("menu-loading");
+
+    let data = null;
+
+    try {
+      const res = await fetch(API_MENU);
+      data      = await res.json();
+      if (!data.ok || !data.categories.length) data = MENU_FALLBACK;
+    } catch {
+      // Serveur éteint → fallback statique
+      data = MENU_FALLBACK;
+      console.warn("Menu API non disponible, affichage du menu statique.");
+    }
+
+    loadEl.style.display = "none"; // cache le spinner
+
+    // ── Génération des onglets ────────────────────────────────────────────────
+    //  Un bouton par catégorie + bouton "Tout" au début.
+
+    tabsEl.innerHTML = `<button class="menu-tab active" onclick="switchCat('all',this)">Tout</button>`;
+    data.categories.forEach(cat => {
+      const btn = document.createElement("button");
+      btn.className = "menu-tab";
+      btn.textContent = cat;
+      btn.onclick = function() { switchCat(cat, this); };
+      tabsEl.appendChild(btn);
+    });
+
+    // ── Génération des cartes ─────────────────────────────────────────────────
+    //  Une carte par item du menu.
+
+    gridEl.innerHTML = "";
+    data.categories.forEach(cat => {
+      data.menu[cat].forEach(item => {
+        const card = document.createElement("div");
+        card.className   = "menu-card show"; // show = visible au départ ("Tout")
+        card.dataset.cat = cat;
+        card.innerHTML = `
+          <div class="menu-card-img">
+            ${item.image_url
+              ? `<img src="http://localhost:3000${item.image_url}" alt="${item.nom}" />`
+              : getEmoji(cat)
+            }
+          </div>
+          <div class="menu-card-body">
+            <h3 class="menu-card-name">${item.nom}</h3>
+            <p class="menu-card-desc">${item.description || ""}</p>
+            <div class="menu-card-footer">
+              <span class="menu-card-price">${parseFloat(item.prix).toFixed(3)} TND</span>
+              <span class="menu-card-badge">${cat}</span>
+            </div>
+          </div>`;
+        gridEl.appendChild(card);
+      });
+    });
+  }
+
+  // ── Filtre par catégorie ───────────────────────────────────────────────────
+  function switchCat(cat, btn) {
+    document.querySelectorAll(".menu-tab").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    document.querySelectorAll(".menu-card").forEach(card => {
+      card.classList.toggle("show", cat === "all" || card.dataset.cat === cat);
+    });
+  }
+
+  // ── Emoji par catégorie (si pas d'image) ──────────────────────────────────
+  function getEmoji(cat) {
+    const map = { "Cafés":"☕","Thés":"🍵","Jus":"🥤","Cocktails":"🍹","Crêpes":"🥞","Gaufres":"🧇","Desserts":"🍰","Plats":"🍽️","Chicha":"💨","Petits-déjeuners":"🍳" };
+    return map[cat] || "🍽️";
+  }
+
+  chargerMenu(); // appelé au chargement de la page
+  </script>
+
+</body>
+</html>

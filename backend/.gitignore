@@ -1,0 +1,7 @@
+node_modules/
+.env
+uploads/menu/*
+uploads/galerie/*
+!uploads/menu/.gitkeep
+!uploads/galerie/.gitkeep
+*.log
